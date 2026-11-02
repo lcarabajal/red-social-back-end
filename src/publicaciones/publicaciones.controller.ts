@@ -1,34 +1,45 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Query, Body, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { PublicacionesService } from './publicaciones.service.js';
-import { CreatePublicacioneDto } from './dto/create-publicacione.dto.js';
-import { UpdatePublicacioneDto } from './dto/update-publicacione.dto.js';
+import { FileInterceptor } from '@nestjs/platform-express';
+import multer from 'multer';
 
 @Controller('publicaciones')
 export class PublicacionesController {
-  constructor(private readonly publicacionesService: PublicacionesService) {}
-
-  @Post()
-  create(@Body() createPublicacioneDto: CreatePublicacioneDto) {
-    return this.publicacionesService.create(createPublicacioneDto);
-  }
+  constructor(private readonly pubService: PublicacionesService) {}
 
   @Get()
-  findAll() {
-    return this.publicacionesService.findAll();
+  getTodas(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('sort') sort: string = 'fecha'
+  ) {
+    return this.pubService.obtenerTodas(Number(page), Number(limit), sort);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.publicacionesService.findOne(+id);
+  @Get('usuario/:id')
+  getPorUsuario(
+    @Param('id') id: string, 
+    @Query('limit') limit: string = '3'
+  ) {
+    return this.pubService.obtenerPorUsuario(id, Number(limit));
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updatePublicacioneDto: UpdatePublicacioneDto) {
-    return this.publicacionesService.update(+id, updatePublicacioneDto);
+  @Post(':id/like')
+  toggleLike(@Param('id') id: string, @Body('userId') userId: string) {
+    return this.pubService.toggleLike(id, userId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.publicacionesService.remove(+id);
+  eliminar(@Param('id') id: string, @Query('userId') userId: string) {
+    return this.pubService.eliminar(id, userId);
+  }
+
+  @Post()
+  @UseInterceptors(FileInterceptor('imagen', { storage: multer.memoryStorage() }))
+  crear(
+    @Body() body: { texto: string; userId: string },
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    return this.pubService.crear(body.texto, body.userId, file);
   }
 }
