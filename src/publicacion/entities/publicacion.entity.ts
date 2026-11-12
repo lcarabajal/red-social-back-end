@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { Usuario } from '../../usuarios/entities/usuario.entity.js';
 
-@Schema({ timestamps: true }) // createdAt funcionará como nuestra 'fecha'
+@Schema({ collection: 'publicacions', timestamps: true }) // createdAt funcionará como nuestra 'fecha'
 export class Publicacion extends Document {
   @Prop()
   imagenUrl: string;
@@ -21,8 +21,9 @@ export class Publicacion extends Document {
   @Prop({ default: 0 }) 
   likesCount: number;
 
-  @Prop({ default: [] })
-  comentarios: any[];
+  @Prop({default: true})
+  activo:boolean;
+
 }
 
 export const PublicacionSchema = SchemaFactory.createForClass(Publicacion);

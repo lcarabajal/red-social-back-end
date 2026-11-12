@@ -7,7 +7,8 @@ async function bootstrap() {
   
   app.enableCors(); //Habilita la comunicación al frontEnd
 
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(new ValidationPipe()); //Habilita el uso de validators en el back
+
   await app.listen(process.env.PORT ?? 3000);
 }
 await bootstrap();

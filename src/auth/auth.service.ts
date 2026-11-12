@@ -6,21 +6,32 @@ import { Usuario } from '../usuarios/entities/usuario.entity.js';
 import { CreateAuthDto } from './dto/create-auth.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 
-import { Express } from 'express';
+
 import 'multer';
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { JwtService } from '@nestjs/jwt';
 
 
 @Injectable()
 export class AuthService {
   private supabase: SupabaseClient;
-  
-  constructor(@InjectModel(Usuario.name) private usuarioModel: Model<Usuario>) {
+  //Esto solo funciona si tengo importados mi mongoo schema y mi jwtModule en mi imports de module
+  constructor(@InjectModel(Usuario.name) private usuarioModel: Model<Usuario>, private jwtService: JwtService) {
     this.supabase = createClient(
       process.env.SUPABASE_URL || '',
       process.env.SUPABASE_KEY || ''
     );
+  }
+  // Generador central de tokens
+  private generarToken(usuario: any) {
+    const payload = { 
+      sub: usuario._id, 
+      correo: usuario.correo, 
+      username: usuario.username,
+      perfil: usuario.perfil || 'usuario' 
+    };
+    return this.jwtService.sign(payload);
   }
 
   async registrar(registroDto: CreateAuthDto, file: Express.Multer.File) {
@@ -38,17 +49,17 @@ export class AuthService {
 
     // 4. Crear y guardar el usuario
     const nuevoUsuario = new this.usuarioModel({
-      ...registroDto,
-      password: hashedPassword,
-      imagenPerfilUrl: imagenUrl
+      ...registroDto, //Datos del usuario desempaquetados
+      password: hashedPassword, //contraseña encriptada
+      imagenPerfilUrl: imagenUrl //imagen URL
     });
 
-    const usuarioGuardado = await nuevoUsuario.save();
+    const usuarioGuardado = await nuevoUsuario.save(); // Guarda el usuario en mongoDB
     
-    // Convertimos a objeto y extraemos 'password', guardando el resto en 'usuarioResponse'
-    const { password, ...usuarioResponse } = usuarioGuardado.toObject();
+    const usuarioResponse = usuarioGuardado;
+    const token = this.generarToken(usuarioResponse);
 
-    return usuarioResponse;
+    return { usuario: usuarioResponse, token };
   }
 
   async login(loginDto: LoginDto) {
@@ -61,6 +72,11 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
+    // NUEVO: Validación de baja lógica
+    if (usuario.activo === false) {
+      throw new UnauthorizedException('Tu cuenta ha sido deshabilitada. No estás autorizado para ingresar.');
+    }
+
     // 2. Comparar contraseña plana con la encriptada en la DB
     const isPasswordValid = await bcrypt.compare(loginDto.password, usuario.password);
     
@@ -68,8 +84,13 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // 3. El requerimiento pide "devolver todos los datos del usuario"
-    return usuario.toObject();
+    // 3. Separamos la contraseña del para generar el JWT 
+    const { password, ...usuarioObj } = usuario.toObject();
+
+    
+    const token = this.generarToken(usuarioObj);
+   
+    return { usuario: usuarioObj, token };
   }
 
   // --- Función auxiliar para simular la subida de imagen ---
@@ -100,5 +121,33 @@ export class AuthService {
       .getPublicUrl(fileName);
 
     return publicUrlData.publicUrl;
+  }
+
+  async autorizar(token: string) {
+    try {
+      // Verifica si es válido y no está vencido
+      const payload = this.jwtService.verify(token); 
+
+      // Buscamos al usuario real en la base de datos
+      const usuario = await this.usuarioModel.findById(payload.sub).select('-password');
+      if (!usuario) throw new UnauthorizedException('Usuario no existe');
+      
+      return usuario;
+    } catch (e) {
+      throw new UnauthorizedException('Token inválido o vencido'); // Devuelve 401
+    }
+  }
+
+  async refrescar(token: string) {
+    try {
+      // Verificamos el token actual
+      const payload = this.jwtService.verify(token);
+
+      // Generamos uno nuevo con el mismo payload (automáticamente le dará otros 15 min)
+      const nuevoPayload = { sub: payload.sub, correo: payload.correo, username: payload.username, rol: payload.rol };
+      return { token: this.jwtService.sign(nuevoPayload) };
+    } catch (e) {
+      throw new UnauthorizedException('Token inválido o vencido'); // 401
+    }
   }
 }
